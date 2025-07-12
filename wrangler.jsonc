@@ -10,16 +10,16 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"migrations": [
 		{
-			"new_sqlite_classes": ["MyMCP"],
-			"tag": "v1"
+		"tag": "v1",
+		"new_classes": ["PeopleDB"]
 		}
 	],
 	"durable_objects": {
 		"bindings": [
-			{
-				"class_name": "MyMCP",
-				"name": "MCP_OBJECT"
-			}
+		{
+			"name": "SHARED_PEOPLE_DB",
+			"class_name": "PeopleDB"
+		}
 		]
 	},
 	"observability": {
