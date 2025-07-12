@@ -4,6 +4,12 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
+  "migrations": [
+    {
+      "tag": "v4",
+      "deleted_classes": ["SharedPeopleDB"]
+    }
+  ],
   "observability": {
     "enabled": true
   }
