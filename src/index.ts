@@ -21,46 +21,16 @@ export class MyMCP extends McpAgent {
 	 * This method registers all mathematical tools that clients can use.
 	 */
 	async init() {
-		// Simple addition tool
+		/**
+		 * Simple addition tool that adds two numbers together
+		 * @example add({"a": 5, "b": 3}) => "5 + 3 = 8"
+		 */
 		this.server.tool(
 			"add",
 			{ a: z.number(), b: z.number() },
-			/**
-			 * Adds two numbers together
-			 * @param {Object} params - The parameters for addition
-			 * @param {number} params.a - The first number to add
-			 * @param {number} params.b - The second number to add
-			 * @returns {Promise<Object>} The result of a + b or an error message
-			 */
-			async (params: any) => {
+			async ({ a, b }) => {
 				try {
-					// Validate input parameters
-					const schema = z.object({
-						a: z.number(),
-						b: z.number(),
-					});
-
-					const validation = schema.safeParse(params);
-					
-					if (!validation.success) {
-						const errors = validation.error.errors
-							.map(err => `${err.path.join('.')}: ${err.message}`)
-							.join(', ');
-						
-						return {
-							content: [
-								{
-									type: "text",
-									text: `❌ Invalid input for 'add' tool: ${errors}. Please provide two numbers (e.g., {"a": 5, "b": 3}).`,
-								},
-							],
-							isError: true,
-						};
-					}
-
-					const { a, b } = validation.data;
 					const result = a + b;
-
 					return {
 						content: [
 							{
@@ -74,16 +44,18 @@ export class MyMCP extends McpAgent {
 						content: [
 							{
 								type: "text",
-								text: `❌ Unexpected error in 'add' tool: ${error instanceof Error ? error.message : 'Unknown error'}`,
+								text: `❌ Error in addition: ${error instanceof Error ? error.message : 'Unknown error'}`,
 							},
 						],
-						isError: true,
 					};
 				}
 			}
 		);
 
-		// Calculator tool with multiple operations
+		/**
+		 * Calculator tool with multiple operations (add, subtract, multiply, divide)
+		 * @example calculate({"operation": "multiply", "a": 6, "b": 7}) => "6 × 7 = 42"
+		 */
 		this.server.tool(
 			"calculate",
 			{
@@ -91,42 +63,8 @@ export class MyMCP extends McpAgent {
 				a: z.number(),
 				b: z.number(),
 			},
-			/**
-			 * Performs various arithmetic operations on two numbers
-			 * @param {Object} params - The parameters for calculation
-			 * @param {("add"|"subtract"|"multiply"|"divide")} params.operation - The operation to perform
-			 * @param {number} params.a - The first number
-			 * @param {number} params.b - The second number
-			 * @returns {Promise<Object>} The result of the calculation or an error message
-			 */
-			async (params: any) => {
+			async ({ operation, a, b }) => {
 				try {
-					// Validate input parameters
-					const schema = z.object({
-						operation: z.enum(["add", "subtract", "multiply", "divide"]),
-						a: z.number(),
-						b: z.number(),
-					});
-
-					const validation = schema.safeParse(params);
-					
-					if (!validation.success) {
-						const errors = validation.error.errors
-							.map(err => `${err.path.join('.')}: ${err.message}`)
-							.join(', ');
-						
-						return {
-							content: [
-								{
-									type: "text",
-									text: `❌ Invalid input for 'calculate' tool: ${errors}. Please provide: operation (add/subtract/multiply/divide), a (number), b (number).`,
-								},
-							],
-							isError: true,
-						};
-					}
-
-					const { operation, a, b } = validation.data;
 					let result: number;
 					let operationSymbol: string;
 
@@ -152,7 +90,6 @@ export class MyMCP extends McpAgent {
 											text: "❌ Error: Cannot divide by zero. Please provide a non-zero divisor.",
 										},
 									],
-									isError: true,
 								};
 							}
 							result = a / b;
@@ -166,7 +103,6 @@ export class MyMCP extends McpAgent {
 										text: `❌ Error: Unknown operation '${operation}'. Supported operations: add, subtract, multiply, divide.`,
 									},
 								],
-								isError: true,
 							};
 					}
 
@@ -188,10 +124,9 @@ export class MyMCP extends McpAgent {
 						content: [
 							{
 								type: "text",
-								text: `❌ Unexpected error in 'calculate' tool: ${error instanceof Error ? error.message : 'Unknown error'}`,
+								text: `❌ Unexpected error in calculation: ${error instanceof Error ? error.message : 'Unknown error'}`,
 							},
 						],
-						isError: true,
 					};
 				}
 			}
