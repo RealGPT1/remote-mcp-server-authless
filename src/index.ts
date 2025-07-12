@@ -1,6 +1,5 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
 
 // Define person type
@@ -13,117 +12,167 @@ type Person = {
 	email: string;
 };
 
-// Define state type (empty since we only use shared database)
-type State = {};
+// Define state type with people database
+type State = {
+	people: Person[];
+};
 
-// Shared Durable Object for people database
-export class SharedPeopleDatabase extends DurableObject {
-	private people: Person[] = [];
-	private initialized = false;
+/**
+ * People Database MCP Server
+ * 
+ * Provides full CRUD operations for managing a people database.
+ * Each user session has their own independent database instance.
+ * 
+ * Available operations:
+ * - CREATE: Add new people to the database
+ * - READ: Search and list people in the database
+ * - UPDATE: Modify existing people's information
+ * - DELETE: Remove people from the database
+ */
+export class MyMCP extends McpAgent<Env, State, {}> {
+	server = new McpServer({
+		name: "People Database Server",
+		version: "1.0.0",
+	});
 
-	constructor(ctx: DurableObjectState, env: Env) {
-		super(ctx, env);
-	}
+	// Initialize state with default people
+	initialState: State = {
+		people: [
+			{
+				id: 1,
+				name: "Sarah Johnson",
+				age: 28,
+				gender: "Female",
+				jobTitle: "Software Engineer",
+				email: "sarah.johnson@techcorp.com"
+			},
+			{
+				id: 2,
+				name: "Michael Chen",
+				age: 34,
+				gender: "Male",
+				jobTitle: "Product Manager",
+				email: "m.chen@innovate.io"
+			},
+			{
+				id: 3,
+				name: "Emma Rodriguez",
+				age: 31,
+				gender: "Female",
+				jobTitle: "UX Designer",
+				email: "emma.r@designstudio.com"
+			},
+			{
+				id: 4,
+				name: "James Wilson",
+				age: 42,
+				gender: "Male",
+				jobTitle: "Data Scientist",
+				email: "jwilson@datatech.org"
+			},
+			{
+				id: 5,
+				name: "Alex Thompson",
+				age: 26,
+				gender: "Non-binary",
+				jobTitle: "DevOps Engineer",
+				email: "alex.thompson@cloudops.net"
+			}
+		],
+	};
 
-	// Initialize with default data if empty
-	private async initializeIfNeeded() {
-		if (this.initialized) return;
-
-		// Load existing data from storage
-		const stored = await this.ctx.storage.get<Person[]>("people");
-		
-		if (stored) {
-			this.people = stored;
-		} else {
-			// Initialize with default people
-			this.people = [
-				{
-					id: 1,
-					name: "Sarah Johnson",
-					age: 28,
-					gender: "Female",
-					jobTitle: "Software Engineer",
-					email: "sarah.johnson@techcorp.com"
-				},
-				{
-					id: 2,
-					name: "Michael Chen",
-					age: 34,
-					gender: "Male",
-					jobTitle: "Product Manager",
-					email: "m.chen@innovate.io"
-				},
-				{
-					id: 3,
-					name: "Emma Rodriguez",
-					age: 31,
-					gender: "Female",
-					jobTitle: "UX Designer",
-					email: "emma.r@designstudio.com"
-				},
-				{
-					id: 4,
-					name: "James Wilson",
-					age: 42,
-					gender: "Male",
-					jobTitle: "Data Scientist",
-					email: "jwilson@datatech.org"
-				},
-				{
-					id: 5,
-					name: "Alex Thompson",
-					age: 26,
-					gender: "Non-binary",
-					jobTitle: "DevOps Engineer",
-					email: "alex.thompson@cloudops.net"
-				}
-			];
-			await this.ctx.storage.put("people", this.people);
-		}
-		
-		this.initialized = true;
-	}
-
-	// Handle requests to the shared database
-	async fetch(request: Request): Promise<Response> {
-		await this.initializeIfNeeded();
-
-		const url = new URL(request.url);
-		const method = request.method;
-
-		try {
-			if (method === "GET" && url.pathname === "/search") {
-				const name = url.searchParams.get("name");
-				if (!name) {
-					return Response.json({ error: "Name parameter required" }, { status: 400 });
-				}
-
+	async init() {
+		/**
+		 * SEARCH/READ: Find a person by name (partial match)
+		 * Use this tool to search for people in the database by name.
+		 * Supports partial matching - searching "john" will find "John Smith".
+		 * 
+		 * @param name - The name or partial name to search for
+		 * @returns Person details if found, or list of available people if not found
+		 * @example lookup_person({"name": "sarah"}) - finds Sarah Johnson
+		 * @example lookup_person({"name": "chen"}) - finds Michael Chen
+		 */
+		this.server.tool(
+			"lookup_person",
+			"Search for a person in the database by name. Supports partial matching to find people even if you don't know their full name.",
+			{ name: z.string().describe("Name or partial name to search for") },
+			async ({ name }) => {
+				// Search for person by name (case-insensitive partial match)
 				const searchTerm = name.toLowerCase();
-				const person = this.people.find(p => 
+				const person = this.state.people.find(p => 
 					p.name.toLowerCase().includes(searchTerm)
 				);
 
 				if (!person) {
-					return Response.json({ 
-						error: `No person found with name containing "${name}"`,
-						availablePeople: this.people.map(p => p.name)
-					}, { status: 404 });
+					return {
+						content: [
+							{
+								type: "text",
+								text: `❌ No person found with name containing "${name}". Available people: ${this.state.people.map(p => p.name).join(", ")}`,
+							},
+						],
+					};
 				}
 
-				return Response.json({ person });
+				return {
+					content: [
+						{
+							type: "text",
+							text: `👤 **${person.name}** (ID: ${person.id})
+📧 Email: ${person.email}
+🎂 Age: ${person.age}
+⚧ Gender: ${person.gender}
+💼 Job Title: ${person.jobTitle}`,
+						},
+					],
+				};
 			}
+		);
 
-			if (method === "GET" && url.pathname === "/list") {
-				return Response.json({ people: this.people });
-			}
+		/**
+		 * CREATE: Add a new person to the database
+		 * Use this tool to add new people to the database.
+		 * All fields are required and validated.
+		 * 
+		 * @param name - Full name of the person
+		 * @param age - Age between 1 and 120
+		 * @param gender - Gender identity
+		 * @param jobTitle - Job title or profession
+		 * @param email - Valid email address
+		 * @returns Confirmation with assigned ID
+		 * @example add_person({"name": "John Doe", "age": 30, "gender": "Male", "jobTitle": "Developer", "email": "john@example.com"})
+		 */
+		this.server.tool(
+			"add_person",
+			"Add a new person to the database. Requires name, age, gender, job title, and email. Email must be unique.",
+			{
+				name: z.string().describe("Full name of the person"),
+				age: z.number().min(1).max(120).describe("Age between 1 and 120"),
+				gender: z.string().describe("Gender identity"),
+				jobTitle: z.string().describe("Job title or profession"),
+				email: z.string().email().describe("Valid email address"),
+			},
+			async ({ name, age, gender, jobTitle, email }) => {
+				// Check if person with same email already exists
+				const existingPerson = this.state.people.find(p => 
+					p.email.toLowerCase() === email.toLowerCase()
+				);
 
-			if (method === "POST" && url.pathname === "/add") {
-				const body = await request.json();
-				const { name, age, gender, jobTitle, email } = body;
+				if (existingPerson) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `❌ Cannot add person: Email "${email}" already exists for ${existingPerson.name} (ID: ${existingPerson.id})`,
+							},
+						],
+					};
+				}
 
 				// Generate new ID
-				const newId = Math.max(...this.people.map(p => p.id), 0) + 1;
+				const newId = Math.max(...this.state.people.map(p => p.id), 0) + 1;
 				
+				// Create new person
 				const newPerson: Person = {
 					id: newId,
 					name,
@@ -133,272 +182,299 @@ export class SharedPeopleDatabase extends DurableObject {
 					email,
 				};
 
-				this.people.push(newPerson);
-				await this.ctx.storage.put("people", this.people);
-
-				return Response.json({ 
-					success: true, 
-					person: newPerson,
-					message: `Added new person: ${name} (ID: ${newId})`
+				// Add to state
+				this.setState({
+					...this.state,
+					people: [...this.state.people, newPerson],
 				});
-			}
 
-			if (method === "GET" && url.pathname === "/stats") {
-				return Response.json({ 
-					totalPeople: this.people.length,
-					lastUpdated: new Date().toISOString()
-				});
-			}
-
-			return Response.json({ error: "Not found" }, { status: 404 });
-
-		} catch (error) {
-			return Response.json({ 
-				error: "Internal server error", 
-				details: error instanceof Error ? error.message : "Unknown error"
-			}, { status: 500 });
-		}
-	}
-}
-
-// Define our MCP agent with people database tools only
-export class MyMCP extends McpAgent<Env, State, {}> {
-	server = new McpServer({
-		name: "People Database Server",
-		version: "1.0.0",
-	});
-
-	// Initialize empty state
-	initialState: State = {};
-
-	// Helper to get shared database instance
-	private getSharedDatabase() {
-		const id = this.env.SHARED_PEOPLE_DB.idFromName("global-people-db");
-		return this.env.SHARED_PEOPLE_DB.get(id);
-	}
-
-	async init() {
-		// Person lookup tool - uses shared database
-		this.server.tool(
-			"lookup_person",
-			{ name: z.string() },
-			async ({ name }) => {
-				try {
-					const db = this.getSharedDatabase();
-					const response = await db.fetch(`http://db/search?name=${encodeURIComponent(name)}`);
-					const data = await response.json();
-
-					if (!response.ok) {
-						return {
-							content: [
-								{
-									type: "text",
-									text: `${data.error}. Available people: ${data.availablePeople?.join(", ") || "None"}`,
-								},
-							],
-						};
-					}
-
-					const person = data.person;
-					return {
-						content: [
-							{
-								type: "text",
-								text: `👤 **${person.name}** (Shared Database)
-📧 Email: ${person.email}
-🎂 Age: ${person.age}
-⚧ Gender: ${person.gender}
-💼 Job Title: ${person.jobTitle}`,
-							},
-						],
-					};
-				} catch (error) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
-							},
-						],
-					};
-				}
+				return {
+					content: [
+						{
+							type: "text",
+							text: `✅ Added new person: **${name}** (ID: ${newId})
+📧 Email: ${email}
+🎂 Age: ${age}
+⚧ Gender: ${gender}
+💼 Job Title: ${jobTitle}`,
+						},
+					],
+				};
 			}
 		);
 
-		// Add person tool - uses shared database
+		/**
+		 * UPDATE: Modify an existing person's information
+		 * Use this tool to update any field of an existing person.
+		 * You can update individual fields or multiple fields at once.
+		 * 
+		 * @param id - The ID of the person to update
+		 * @param name - New name (optional)
+		 * @param age - New age (optional)
+		 * @param gender - New gender (optional)
+		 * @param jobTitle - New job title (optional)
+		 * @param email - New email address (optional)
+		 * @returns Updated person details
+		 * @example update_person({"id": 1, "age": 29}) - updates Sarah's age
+		 * @example update_person({"id": 2, "jobTitle": "Senior Product Manager", "email": "michael.chen@newcompany.com"}) - updates multiple fields
+		 */
 		this.server.tool(
-			"add_person",
+			"update_person",
+			"Update an existing person's information. You can change any field (name, age, gender, job title, email) by providing the person's ID and the new values.",
 			{
-				name: z.string(),
-				age: z.number().min(1).max(120),
-				gender: z.string(),
-				jobTitle: z.string(),
-				email: z.string().email(),
+				id: z.number().describe("The ID of the person to update"),
+				name: z.string().optional().describe("New name (optional)"),
+				age: z.number().min(1).max(120).optional().describe("New age between 1 and 120 (optional)"),
+				gender: z.string().optional().describe("New gender (optional)"),
+				jobTitle: z.string().optional().describe("New job title (optional)"),
+				email: z.string().email().optional().describe("New email address (optional)"),
 			},
-			async ({ name, age, gender, jobTitle, email }) => {
-				try {
-					const db = this.getSharedDatabase();
-					const response = await db.fetch("http://db/add", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ name, age, gender, jobTitle, email }),
-					});
-
-					const data = await response.json();
-
-					if (!response.ok) {
-						return {
-							content: [
-								{
-									type: "text",
-									text: `Error adding person: ${data.error}`,
-								},
-							],
-						};
-					}
-
+			async ({ id, name, age, gender, jobTitle, email }) => {
+				// Find the person to update
+				const personIndex = this.state.people.findIndex(p => p.id === id);
+				
+				if (personIndex === -1) {
 					return {
 						content: [
 							{
 								type: "text",
-								text: `✅ ${data.message} (Shared Database)`,
-							},
-						],
-					};
-				} catch (error) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
+								text: `❌ Person with ID ${id} not found. Available IDs: ${this.state.people.map(p => `${p.id} (${p.name})`).join(", ")}`,
 							},
 						],
 					};
 				}
+
+				// Check if new email conflicts with existing person
+				if (email) {
+					const existingPerson = this.state.people.find(p => 
+						p.email.toLowerCase() === email.toLowerCase() && p.id !== id
+					);
+
+					if (existingPerson) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `❌ Cannot update: Email "${email}" already exists for ${existingPerson.name} (ID: ${existingPerson.id})`,
+								},
+							],
+						};
+					}
+				}
+
+				// Get current person data
+				const currentPerson = this.state.people[personIndex];
+				
+				// Create updated person with only provided fields changed
+				const updatedPerson: Person = {
+					id: currentPerson.id,
+					name: name ?? currentPerson.name,
+					age: age ?? currentPerson.age,
+					gender: gender ?? currentPerson.gender,
+					jobTitle: jobTitle ?? currentPerson.jobTitle,
+					email: email ?? currentPerson.email,
+				};
+
+				// Update state
+				const updatedPeople = [...this.state.people];
+				updatedPeople[personIndex] = updatedPerson;
+				
+				this.setState({
+					...this.state,
+					people: updatedPeople,
+				});
+
+				// Show what was updated
+				const changes = [];
+				if (name && name !== currentPerson.name) changes.push(`name: "${currentPerson.name}" → "${name}"`);
+				if (age && age !== currentPerson.age) changes.push(`age: ${currentPerson.age} → ${age}`);
+				if (gender && gender !== currentPerson.gender) changes.push(`gender: "${currentPerson.gender}" → "${gender}"`);
+				if (jobTitle && jobTitle !== currentPerson.jobTitle) changes.push(`job title: "${currentPerson.jobTitle}" → "${jobTitle}"`);
+				if (email && email !== currentPerson.email) changes.push(`email: "${currentPerson.email}" → "${email}"`);
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `✅ Updated person ID ${id}:
+${changes.length > 0 ? `📝 Changes: ${changes.join(", ")}` : "⚠️ No changes made"}
+
+👤 **${updatedPerson.name}** (ID: ${updatedPerson.id})
+📧 Email: ${updatedPerson.email}
+🎂 Age: ${updatedPerson.age}
+⚧ Gender: ${updatedPerson.gender}
+💼 Job Title: ${updatedPerson.jobTitle}`,
+						},
+					],
+				};
 			}
 		);
 
-		// List all people tool - uses shared database
+		/**
+		 * DELETE: Remove a person from the database
+		 * Use this tool to permanently delete a person from the database.
+		 * This action cannot be undone.
+		 * 
+		 * @param id - The ID of the person to delete
+		 * @returns Confirmation of deletion
+		 * @example delete_person({"id": 3}) - deletes the person with ID 3
+		 */
+		this.server.tool(
+			"delete_person",
+			"Permanently remove a person from the database. This action cannot be undone. You need to provide the person's ID number.",
+			{
+				id: z.number().describe("The ID of the person to delete"),
+			},
+			async ({ id }) => {
+				// Find the person to delete
+				const personIndex = this.state.people.findIndex(p => p.id === id);
+				
+				if (personIndex === -1) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `❌ Person with ID ${id} not found. Available IDs: ${this.state.people.map(p => `${p.id} (${p.name})`).join(", ")}`,
+							},
+						],
+					};
+				}
+
+				// Get person details before deletion
+				const personToDelete = this.state.people[personIndex];
+				
+				// Remove from state
+				const updatedPeople = this.state.people.filter(p => p.id !== id);
+				
+				this.setState({
+					...this.state,
+					people: updatedPeople,
+				});
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `✅ Deleted person: **${personToDelete.name}** (ID: ${id})
+📧 Email: ${personToDelete.email}
+👥 Remaining people: ${updatedPeople.length}`,
+						},
+					],
+				};
+			}
+		);
+
+		/**
+		 * LIST: Display all people in the database
+		 * Use this tool to see all people currently stored in the database.
+		 * Shows a summary list with ID, name, age, gender, and job title.
+		 * 
+		 * @returns List of all people or empty message
+		 * @example list_people({}) - shows all people
+		 */
 		this.server.tool(
 			"list_people",
+			"Display all people currently in the database. Shows a summary with ID, name, age, gender, and job title for each person.",
 			{},
 			async () => {
-				try {
-					const db = this.getSharedDatabase();
-					const response = await db.fetch("http://db/list");
-					const data = await response.json();
-
-					if (!response.ok) {
-						return {
-							content: [
-								{
-									type: "text",
-									text: `Error: ${data.error}`,
-								},
-							],
-						};
-					}
-
-					if (data.people.length === 0) {
-						return {
-							content: [
-								{
+				if (this.state.people.length === 0) {
+					return {
+						content: [
+							{
 								type: "text",
-								text: "No people in the shared database.",
+								text: "📭 No people in the database. Use add_person to add someone.",
 							},
 						],
 					};
 				}
 
-				const peopleList = data.people
-					.map((p: Person) => `${p.id}. ${p.name} (${p.age}, ${p.gender}) - ${p.jobTitle}`)
+				const peopleList = this.state.people
+					.map(p => `${p.id}. **${p.name}** (${p.age}, ${p.gender}) - ${p.jobTitle}`)
 					.join("\n");
 
 				return {
 					content: [
 						{
 							type: "text",
-							text: `👥 **Shared People Database (${data.people.length} people)**\n\n${peopleList}`,
-						},
-					],
-				};
-			} catch (error) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
+							text: `👥 **People Database (${this.state.people.length} people)**\n\n${peopleList}`,
 						},
 					],
 				};
 			}
-		}
-	);
+		);
 
-	// Database stats tool - shows shared database info
-	this.server.tool(
-		"database_stats",
-		{},
-		async () => {
-			try {
-				const db = this.getSharedDatabase();
-				const response = await db.fetch("http://db/stats");
-				const data = await response.json();
-
-				if (!response.ok) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Error: ${data.error}`,
-							},
-						],
-					};
-				}
-
-				return {
-					content: [
-						{
-							type: "text",
-							text: `📊 **Shared Database Statistics**
-👥 Total People: ${data.totalPeople}
-🕒 Last Updated: ${data.lastUpdated}
-🌍 Global Access: All users see the same data`,
-						},
-					],
+		/**
+		 * STATS: Show database statistics and information
+		 * Use this tool to get overview information about the database.
+		 * Shows total count, session info, and available operations.
+		 * 
+		 * @returns Database statistics and help information
+		 * @example database_stats({}) - shows current database stats
+		 */
+		this.server.tool(
+			"database_stats",
+			"Show detailed statistics about the database including total count, age distribution, gender breakdown, and help information about available operations.",
+			{},
+			async () => {
+				const ageGroups = {
+					"18-25": this.state.people.filter(p => p.age >= 18 && p.age <= 25).length,
+					"26-35": this.state.people.filter(p => p.age >= 26 && p.age <= 35).length,
+					"36-45": this.state.people.filter(p => p.age >= 36 && p.age <= 45).length,
+					"46+": this.state.people.filter(p => p.age >= 46).length,
 				};
-			} catch (error) {
+
+				const genderCount = this.state.people.reduce((acc, p) => {
+					acc[p.gender] = (acc[p.gender] || 0) + 1;
+					return acc;
+				}, {} as Record<string, number>);
+
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
+							text: `📊 **Database Statistics**
+👥 Total People: ${this.state.people.length}
+🕒 Session Started: ${new Date().toISOString()}
+📝 Storage: Per-session (each user has their own database)
+
+**Age Distribution:**
+${Object.entries(ageGroups).map(([range, count]) => `${range}: ${count} people`).join("\n")}
+
+**Gender Distribution:**
+${Object.entries(genderCount).map(([gender, count]) => `${gender}: ${count} people`).join("\n")}
+
+**Available Operations:**
+🔍 lookup_person - Search by name
+➕ add_person - Add new person
+✏️ update_person - Modify existing person
+🗑️ delete_person - Remove person
+📋 list_people - Show all people
+📊 database_stats - Show this information`,
 						},
 					],
 				};
 			}
-		}
-	);
-}
+		);
+	}
 
-// Handle state updates (now empty since no state)
-onStateUpdate(state: State) {
-	console.log({ stateUpdate: state });
-}
+	// Handle state updates
+	onStateUpdate(state: State) {
+		console.log({ stateUpdate: state });
+	}
 }
 
 export default {
-fetch(request: Request, env: Env, ctx: ExecutionContext) {
-	const url = new URL(request.url);
+	fetch(request: Request, env: Env, ctx: ExecutionContext) {
+		const url = new URL(request.url);
 
-	if (url.pathname === "/sse" || url.pathname === "/sse/message") {
-		return MyMCP.serveSSE("/sse").fetch(request, env, ctx);
-	}
+		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
+			return MyMCP.serveSSE("/sse").fetch(request, env, ctx);
+		}
 
-	if (url.pathname === "/mcp") {
-		return MyMCP.serve("/mcp").fetch(request, env, ctx);
-	}
+		if (url.pathname === "/mcp") {
+			return MyMCP.serve("/mcp").fetch(request, env, ctx);
+		}
 
-	return new Response("Not found", { status: 404 });
-},
+		return new Response("Not found", { status: 404 });
+	},
 };
