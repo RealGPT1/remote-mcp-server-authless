@@ -10,7 +10,7 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"migrations": [
 		{
-		"tag": "v1",
+		"tag": "v2",
 		"new_classes": ["PeopleDB"]
 		}
 	],
