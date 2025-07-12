@@ -157,7 +157,6 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 		// Counter tool - adds to the persistent counter
 		this.server.tool(
 			"count",
-			"Add to the counter, stored in the MCP",
 			{ a: z.number() },
 			async ({ a }) => {
 				this.setState({ 
