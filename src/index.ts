@@ -17,7 +17,7 @@ type Person = {
 type State = {};
 
 // Shared Durable Object for people database (minimal class name)
-export class PeopleDB extends DurableObject {
+export class SharedPeopleDB extends DurableObject {
 	private people: Person[] = [];
 	private initialized = false;
 
