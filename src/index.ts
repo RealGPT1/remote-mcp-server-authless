@@ -28,8 +28,26 @@ export class MyMCP extends McpAgent {
 		this.server.tool(
 			"add",
 			{ a: z.number(), b: z.number() },
-			async ({ a, b }) => {
+			async (params) => {
 				try {
+					// Debug: log what we're receiving
+					console.log('Add tool params:', params);
+					
+					// Handle different parameter formats
+					const a = params.a ?? params[0];
+					const b = params.b ?? params[1];
+					
+					if (a === undefined || b === undefined) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `❌ Missing parameters. Received: ${JSON.stringify(params)}. Expected: {"a": number, "b": number}`,
+								},
+							],
+						};
+					}
+					
 					const result = a + b;
 					return {
 						content: [
@@ -63,8 +81,27 @@ export class MyMCP extends McpAgent {
 				a: z.number(),
 				b: z.number(),
 			},
-			async ({ operation, a, b }) => {
+			async (params) => {
 				try {
+					// Debug: log what we're receiving
+					console.log('Calculate tool params:', params);
+					
+					// Handle different parameter formats
+					const operation = params.operation;
+					const a = params.a;
+					const b = params.b;
+					
+					if (operation === undefined || a === undefined || b === undefined) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `❌ Missing parameters. Received: ${JSON.stringify(params)}. Expected: {"operation": "add|subtract|multiply|divide", "a": number, "b": number}`,
+								},
+							],
+						};
+					}
+					
 					let result: number;
 					let operationSymbol: string;
 
