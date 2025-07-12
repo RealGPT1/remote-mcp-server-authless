@@ -1,6 +1,14 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
+
+// Empty class to satisfy Cloudflare's expectation (will be removed later)
+export class SharedPeopleDB extends DurableObject {
+	async fetch(request: Request): Promise<Response> {
+		return new Response("Not implemented", { status: 501 });
+	}
+}
 
 // Define person type
 type Person = {
