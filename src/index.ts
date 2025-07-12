@@ -2,54 +2,18 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-// Define state type for the counter
+// Define state type for the counter and people database
 type State = { 
-	counter: number 
+	counter: number;
+	people: Array<{
+		id: number;
+		name: string;
+		age: number;
+		gender: string;
+		jobTitle: string;
+		email: string;
+	}>;
 };
-
-// Dummy people database
-const PEOPLE_DATABASE = [
-	{
-		id: 1,
-		name: "Sarah Johnson",
-		age: 28,
-		gender: "Female",
-		jobTitle: "Software Engineer",
-		email: "sarah.johnson@techcorp.com"
-	},
-	{
-		id: 2,
-		name: "Michael Chen",
-		age: 34,
-		gender: "Male",
-		jobTitle: "Product Manager",
-		email: "m.chen@innovate.io"
-	},
-	{
-		id: 3,
-		name: "Emma Rodriguez",
-		age: 31,
-		gender: "Female",
-		jobTitle: "UX Designer",
-		email: "emma.r@designstudio.com"
-	},
-	{
-		id: 4,
-		name: "James Wilson",
-		age: 42,
-		gender: "Male",
-		jobTitle: "Data Scientist",
-		email: "jwilson@datatech.org"
-	},
-	{
-		id: 5,
-		name: "Alex Thompson",
-		age: 26,
-		gender: "Non-binary",
-		jobTitle: "DevOps Engineer",
-		email: "alex.thompson@cloudops.net"
-	}
-];
 
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent<Env, State, {}> {
@@ -58,9 +22,51 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 		version: "1.0.0",
 	});
 
-	// Initialize state with counter
+	// Initialize state with counter and people database
 	initialState: State = {
 		counter: 1,
+		people: [
+			{
+				id: 1,
+				name: "Sarah Johnson",
+				age: 28,
+				gender: "Female",
+				jobTitle: "Software Engineer",
+				email: "sarah.johnson@techcorp.com"
+			},
+			{
+				id: 2,
+				name: "Michael Chen",
+				age: 34,
+				gender: "Male",
+				jobTitle: "Product Manager",
+				email: "m.chen@innovate.io"
+			},
+			{
+				id: 3,
+				name: "Emma Rodriguez",
+				age: 31,
+				gender: "Female",
+				jobTitle: "UX Designer",
+				email: "emma.r@designstudio.com"
+			},
+			{
+				id: 4,
+				name: "James Wilson",
+				age: 42,
+				gender: "Male",
+				jobTitle: "Data Scientist",
+				email: "jwilson@datatech.org"
+			},
+			{
+				id: 5,
+				name: "Alex Thompson",
+				age: 26,
+				gender: "Non-binary",
+				jobTitle: "DevOps Engineer",
+				email: "alex.thompson@cloudops.net"
+			}
+		],
 	};
 
 	async init() {
@@ -124,7 +130,7 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 			async ({ name }) => {
 				// Search for person by name (case-insensitive partial match)
 				const searchTerm = name.toLowerCase();
-				const person = PEOPLE_DATABASE.find(p => 
+				const person = this.state.people.find(p => 
 					p.name.toLowerCase().includes(searchTerm)
 				);
 
@@ -133,7 +139,7 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 						content: [
 							{
 								type: "text",
-								text: `No person found with name containing "${name}". Available people: ${PEOPLE_DATABASE.map(p => p.name).join(", ")}`,
+								text: `No person found with name containing "${name}". Available people: ${this.state.people.map(p => p.name).join(", ")}`,
 							},
 						],
 					};
@@ -148,6 +154,78 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 🎂 Age: ${person.age}
 ⚧ Gender: ${person.gender}
 💼 Job Title: ${person.jobTitle}`,
+						},
+					],
+				};
+			}
+		);
+
+		// Add person tool
+		this.server.tool(
+			"add_person",
+			{
+				name: z.string(),
+				age: z.number().min(1).max(120),
+				gender: z.string(),
+				jobTitle: z.string(),
+				email: z.string().email(),
+			},
+			async ({ name, age, gender, jobTitle, email }) => {
+				// Generate new ID
+				const newId = Math.max(...this.state.people.map(p => p.id), 0) + 1;
+				
+				// Create new person
+				const newPerson = {
+					id: newId,
+					name,
+					age,
+					gender,
+					jobTitle,
+					email,
+				};
+
+				// Add to state
+				this.setState({
+					...this.state,
+					people: [...this.state.people, newPerson],
+				});
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `✅ Added new person: ${name} (ID: ${newId})`,
+						},
+					],
+				};
+			}
+		);
+
+		// List all people tool
+		this.server.tool(
+			"list_people",
+			{},
+			async () => {
+				if (this.state.people.length === 0) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: "No people in the database.",
+							},
+						],
+					};
+				}
+
+				const peopleList = this.state.people
+					.map(p => `${p.id}. ${p.name} (${p.age}, ${p.gender}) - ${p.jobTitle}`)
+					.join("\n");
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `👥 **People Database (${this.state.people.length} people)**\n\n${peopleList}`,
 						},
 					],
 				};
