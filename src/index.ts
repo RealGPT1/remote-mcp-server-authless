@@ -1,73 +1,181 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
 
-// Define state type for the counter and people database
-type State = { 
-	counter: number;
-	people: Array<{
-		id: number;
-		name: string;
-		age: number;
-		gender: string;
-		jobTitle: string;
-		email: string;
-	}>;
+// Define person type
+type Person = {
+	id: number;
+	name: string;
+	age: number;
+	gender: string;
+	jobTitle: string;
+	email: string;
 };
+
+// Define state type (empty since we removed counter)
+type State = {};
+
+// Shared Durable Object for people database
+export class SharedPeopleDatabase extends DurableObject {
+	private people: Person[] = [];
+	private initialized = false;
+
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+	}
+
+	// Initialize with default data if empty
+	private async initializeIfNeeded() {
+		if (this.initialized) return;
+
+		// Load existing data from storage
+		const stored = await this.ctx.storage.get<Person[]>("people");
+		
+		if (stored) {
+			this.people = stored;
+		} else {
+			// Initialize with default people
+			this.people = [
+				{
+					id: 1,
+					name: "Sarah Johnson",
+					age: 28,
+					gender: "Female",
+					jobTitle: "Software Engineer",
+					email: "sarah.johnson@techcorp.com"
+				},
+				{
+					id: 2,
+					name: "Michael Chen",
+					age: 34,
+					gender: "Male",
+					jobTitle: "Product Manager",
+					email: "m.chen@innovate.io"
+				},
+				{
+					id: 3,
+					name: "Emma Rodriguez",
+					age: 31,
+					gender: "Female",
+					jobTitle: "UX Designer",
+					email: "emma.r@designstudio.com"
+				},
+				{
+					id: 4,
+					name: "James Wilson",
+					age: 42,
+					gender: "Male",
+					jobTitle: "Data Scientist",
+					email: "jwilson@datatech.org"
+				},
+				{
+					id: 5,
+					name: "Alex Thompson",
+					age: 26,
+					gender: "Non-binary",
+					jobTitle: "DevOps Engineer",
+					email: "alex.thompson@cloudops.net"
+				}
+			];
+			await this.ctx.storage.put("people", this.people);
+		}
+		
+		this.initialized = true;
+	}
+
+	// Handle requests to the shared database
+	async fetch(request: Request): Promise<Response> {
+		await this.initializeIfNeeded();
+
+		const url = new URL(request.url);
+		const method = request.method;
+
+		try {
+			if (method === "GET" && url.pathname === "/search") {
+				const name = url.searchParams.get("name");
+				if (!name) {
+					return Response.json({ error: "Name parameter required" }, { status: 400 });
+				}
+
+				const searchTerm = name.toLowerCase();
+				const person = this.people.find(p => 
+					p.name.toLowerCase().includes(searchTerm)
+				);
+
+				if (!person) {
+					return Response.json({ 
+						error: `No person found with name containing "${name}"`,
+						availablePeople: this.people.map(p => p.name)
+					}, { status: 404 });
+				}
+
+				return Response.json({ person });
+			}
+
+			if (method === "GET" && url.pathname === "/list") {
+				return Response.json({ people: this.people });
+			}
+
+			if (method === "POST" && url.pathname === "/add") {
+				const body = await request.json();
+				const { name, age, gender, jobTitle, email } = body;
+
+				// Generate new ID
+				const newId = Math.max(...this.people.map(p => p.id), 0) + 1;
+				
+				const newPerson: Person = {
+					id: newId,
+					name,
+					age,
+					gender,
+					jobTitle,
+					email,
+				};
+
+				this.people.push(newPerson);
+				await this.ctx.storage.put("people", this.people);
+
+				return Response.json({ 
+					success: true, 
+					person: newPerson,
+					message: `Added new person: ${name} (ID: ${newId})`
+				});
+			}
+
+			if (method === "GET" && url.pathname === "/stats") {
+				return Response.json({ 
+					totalPeople: this.people.length,
+					lastUpdated: new Date().toISOString()
+				});
+			}
+
+			return Response.json({ error: "Not found" }, { status: 404 });
+
+		} catch (error) {
+			return Response.json({ 
+				error: "Internal server error", 
+				details: error instanceof Error ? error.message : "Unknown error"
+			}, { status: 500 });
+		}
+	}
+}
 
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent<Env, State, {}> {
 	server = new McpServer({
-		name: "Authless Calculator",
+		name: "People Database Server",
 		version: "1.0.0",
 	});
 
-	// Initialize state with counter and people database
-	initialState: State = {
-		counter: 1,
-		people: [
-			{
-				id: 1,
-				name: "Sarah Johnson",
-				age: 28,
-				gender: "Female",
-				jobTitle: "Software Engineer",
-				email: "sarah.johnson@techcorp.com"
-			},
-			{
-				id: 2,
-				name: "Michael Chen",
-				age: 34,
-				gender: "Male",
-				jobTitle: "Product Manager",
-				email: "m.chen@innovate.io"
-			},
-			{
-				id: 3,
-				name: "Emma Rodriguez",
-				age: 31,
-				gender: "Female",
-				jobTitle: "UX Designer",
-				email: "emma.r@designstudio.com"
-			},
-			{
-				id: 4,
-				name: "James Wilson",
-				age: 42,
-				gender: "Male",
-				jobTitle: "Data Scientist",
-				email: "jwilson@datatech.org"
-			},
-			{
-				id: 5,
-				name: "Alex Thompson",
-				age: 26,
-				gender: "Non-binary",
-				jobTitle: "DevOps Engineer",
-				email: "alex.thompson@cloudops.net"
-			}
-		],
-	};
+	// Initialize empty state
+	initialState: State = {};
+
+	// Helper to get shared database instance
+	private getSharedDatabase() {
+		const id = this.env.SHARED_PEOPLE_DB.idFromName("global-people-db");
+		return this.env.SHARED_PEOPLE_DB.get(id);
+	}
 
 	async init() {
 		// Counter resource - exposes current counter value
@@ -123,44 +231,54 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 			}
 		);
 
-		// Person lookup tool
+		// Person lookup tool - now uses shared database
 		this.server.tool(
 			"lookup_person",
 			{ name: z.string() },
 			async ({ name }) => {
-				// Search for person by name (case-insensitive partial match)
-				const searchTerm = name.toLowerCase();
-				const person = this.state.people.find(p => 
-					p.name.toLowerCase().includes(searchTerm)
-				);
+				try {
+					const db = this.getSharedDatabase();
+					const response = await db.fetch(`http://db/search?name=${encodeURIComponent(name)}`);
+					const data = await response.json();
 
-				if (!person) {
+					if (!response.ok) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `${data.error}. Available people: ${data.availablePeople?.join(", ") || "None"}`,
+								},
+							],
+						};
+					}
+
+					const person = data.person;
 					return {
 						content: [
 							{
 								type: "text",
-								text: `No person found with name containing "${name}". Available people: ${this.state.people.map(p => p.name).join(", ")}`,
-							},
-						],
-					};
-				}
-
-				return {
-					content: [
-						{
-							type: "text",
-							text: `👤 **${person.name}**
+								text: `👤 **${person.name}** (Shared Database)
 📧 Email: ${person.email}
 🎂 Age: ${person.age}
 ⚧ Gender: ${person.gender}
 💼 Job Title: ${person.jobTitle}`,
-						},
-					],
-				};
+							},
+						],
+					};
+				} catch (error) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
+							},
+						],
+					};
+				}
 			}
 		);
 
-		// Add person tool
+		// Add person tool - now uses shared database
 		this.server.tool(
 			"add_person",
 			{
@@ -171,68 +289,151 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 				email: z.string().email(),
 			},
 			async ({ name, age, gender, jobTitle, email }) => {
-				// Generate new ID
-				const newId = Math.max(...this.state.people.map(p => p.id), 0) + 1;
-				
-				// Create new person
-				const newPerson = {
-					id: newId,
-					name,
-					age,
-					gender,
-					jobTitle,
-					email,
-				};
+				try {
+					const db = this.getSharedDatabase();
+					const response = await db.fetch("http://db/add", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ name, age, gender, jobTitle, email }),
+					});
 
-				// Add to state
-				this.setState({
-					...this.state,
-					people: [...this.state.people, newPerson],
-				});
+					const data = await response.json();
 
-				return {
-					content: [
-						{
-							type: "text",
-							text: `✅ Added new person: ${name} (ID: ${newId})`,
-						},
-					],
-				};
-			}
-		);
+					if (!response.ok) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Error adding person: ${data.error}`,
+								},
+							],
+						};
+					}
 
-		// List all people tool
-		this.server.tool(
-			"list_people",
-			{},
-			async () => {
-				if (this.state.people.length === 0) {
 					return {
 						content: [
 							{
 								type: "text",
-								text: "No people in the database.",
+								text: `✅ ${data.message} (Shared Database)`,
+							},
+						],
+					};
+				} catch (error) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
 							},
 						],
 					};
 				}
-
-				const peopleList = this.state.people
-					.map(p => `${p.id}. ${p.name} (${p.age}, ${p.gender}) - ${p.jobTitle}`)
-					.join("\n");
-
-				return {
-					content: [
-						{
-							type: "text",
-							text: `👥 **People Database (${this.state.people.length} people)**\n\n${peopleList}`,
-						},
-					],
-				};
 			}
 		);
 
-		// Counter tool - adds to the persistent counter
+		// List all people tool - now uses shared database
+		this.server.tool(
+			"list_people",
+			{},
+			async () => {
+				try {
+					const db = this.getSharedDatabase();
+					const response = await db.fetch("http://db/list");
+					const data = await response.json();
+
+					if (!response.ok) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Error: ${data.error}`,
+								},
+							],
+						};
+					}
+
+					if (data.people.length === 0) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: "No people in the shared database.",
+								},
+							],
+						};
+					}
+
+					const peopleList = data.people
+						.map((p: Person) => `${p.id}. ${p.name} (${p.age}, ${p.gender}) - ${p.jobTitle}`)
+						.join("\n");
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: `👥 **Shared People Database (${data.people.length} people)**\n\n${peopleList}`,
+							},
+						],
+					};
+				} catch (error) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
+							},
+						],
+					};
+				}
+			}
+		);
+
+		// Database stats tool - shows shared database info
+		this.server.tool(
+			"database_stats",
+			{},
+			async () => {
+				try {
+					const db = this.getSharedDatabase();
+					const response = await db.fetch("http://db/stats");
+					const data = await response.json();
+
+					if (!response.ok) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Error: ${data.error}`,
+								},
+							],
+						};
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: `📊 **Shared Database Statistics**
+👥 Total People: ${data.totalPeople}
+🕒 Last Updated: ${data.lastUpdated}
+🌍 Global Access: All users see the same data`,
+							},
+						],
+					};
+				} catch (error) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
+							},
+						],
+					};
+				}
+			}
+		);
+
+		// Counter tool - adds to the persistent counter (still per-session)
 		this.server.tool(
 			"count",
 			{ a: z.number() },
@@ -244,14 +445,14 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 				return {
 					content: [{ 
 						type: "text", 
-						text: `Added ${a}, total is now ${this.state.counter}` 
+						text: `Added ${a}, total is now ${this.state.counter} (Personal Counter)` 
 					}],
 				};
 			}
 		);
 	}
 
-	// Handle state updates
+	// Handle state updates (now empty since no state)
 	onStateUpdate(state: State) {
 		console.log({ stateUpdate: state });
 	}
