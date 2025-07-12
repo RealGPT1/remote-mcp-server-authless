@@ -2,6 +2,50 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+// Dummy people database
+const PEOPLE_DATABASE = [
+	{
+		id: 1,
+		name: "Sarah Johnson",
+		age: 28,
+		gender: "Female",
+		jobTitle: "Software Engineer",
+		email: "sarah.johnson@techcorp.com"
+	},
+	{
+		id: 2,
+		name: "Michael Chen",
+		age: 34,
+		gender: "Male",
+		jobTitle: "Product Manager",
+		email: "m.chen@innovate.io"
+	},
+	{
+		id: 3,
+		name: "Emma Rodriguez",
+		age: 31,
+		gender: "Female",
+		jobTitle: "UX Designer",
+		email: "emma.r@designstudio.com"
+	},
+	{
+		id: 4,
+		name: "James Wilson",
+		age: 42,
+		gender: "Male",
+		jobTitle: "Data Scientist",
+		email: "jwilson@datatech.org"
+	},
+	{
+		id: 5,
+		name: "Alex Thompson",
+		age: 26,
+		gender: "Non-binary",
+		jobTitle: "DevOps Engineer",
+		email: "alex.thompson@cloudops.net"
+	}
+];
+
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
 	server = new McpServer({
@@ -53,6 +97,43 @@ export class MyMCP extends McpAgent {
 						break;
 				}
 				return { content: [{ type: "text", text: String(result) }] };
+			}
+		);
+
+		// Person lookup tool
+		this.server.tool(
+			"lookup_person",
+			{ name: z.string() },
+			async ({ name }) => {
+				// Search for person by name (case-insensitive partial match)
+				const searchTerm = name.toLowerCase();
+				const person = PEOPLE_DATABASE.find(p => 
+					p.name.toLowerCase().includes(searchTerm)
+				);
+
+				if (!person) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `No person found with name containing "${name}". Available people: ${PEOPLE_DATABASE.map(p => p.name).join(", ")}`,
+							},
+						],
+					};
+				}
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `👤 **${person.name}**
+📧 Email: ${person.email}
+🎂 Age: ${person.age}
+⚧ Gender: ${person.gender}
+💼 Job Title: ${person.jobTitle}`,
+						},
+					],
+				};
 			}
 		);
 	}
