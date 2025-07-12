@@ -82,6 +82,23 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 	};
 
 	async init() {
+		// Add a simple test tool to verify the server is working
+		this.server.tool(
+			"test_connection",
+			"Test if the MCP server is working correctly. Use this to verify the connection.",
+			{},
+			async () => {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "✅ MCP Server is working! Available tools: lookup_person, add_person, update_person, delete_person, list_people, database_stats",
+						},
+					],
+				};
+			}
+		);
+
 		/**
 		 * SEARCH/READ: Find a person by name (partial match)
 		 * Use this tool to search for people in the database by name.
