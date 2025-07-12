@@ -7,7 +7,7 @@
   "migrations": [
     {
       "tag": "initial",
-      "new_classes": ["SharedPeopleDB"]
+      "new_sqlite_classes": ["SharedPeopleDB"]
     }
   ],
   "durable_objects": {
