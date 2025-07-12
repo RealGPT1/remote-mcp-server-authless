@@ -1,32 +1,24 @@
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "remote-mcp-server-authless",
-	"main": "src/index.ts",
-	"compatibility_date": "2025-03-10",
-	"compatibility_flags": ["nodejs_compat"],
-	"migrations": [
-		{
-		"tag": "v1",
-		"new_classes": ["PeopleDB"]
-		},
-	    {
-      	"tag": "v2", 
-      	"new_classes": []
-    	}
-	],
-	"durable_objects": {
-		"bindings": [
-		{
-			"name": "SHARED_PEOPLE_DB",
-			"class_name": "PeopleDB"
-		}
-		]
-	},
-	"observability": {
-		"enabled": true
-	}
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "remote-mcp-server-authless",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "migrations": [
+    {
+      "tag": "initial",
+      "new_classes": ["SharedPeopleDB"]
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SHARED_PEOPLE_DB",
+        "class_name": "SharedPeopleDB"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
 }
