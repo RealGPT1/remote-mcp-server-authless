@@ -13,7 +13,7 @@ type Person = {
 	email: string;
 };
 
-// Define state type (empty since we removed counter)
+// Define state type (empty since we only use shared database)
 type State = {};
 
 // Shared Durable Object for people database
@@ -161,7 +161,7 @@ export class SharedPeopleDatabase extends DurableObject {
 	}
 }
 
-// Define our MCP agent with tools
+// Define our MCP agent with people database tools only
 export class MyMCP extends McpAgent<Env, State, {}> {
 	server = new McpServer({
 		name: "People Database Server",
@@ -178,60 +178,7 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 	}
 
 	async init() {
-		// Counter resource - exposes current counter value
-		this.server.resource(`counter`, `mcp://resource/counter`, (uri) => {
-			return {
-				contents: [{ uri: uri.href, text: String(this.state.counter) }],
-			};
-		});
-
-		// Simple addition tool
-		this.server.tool(
-			"add",
-			{ a: z.number(), b: z.number() },
-			async ({ a, b }) => ({
-				content: [{ type: "text", text: String(a + b) }],
-			})
-		);
-
-		// Calculator tool with multiple operations
-		this.server.tool(
-			"calculate",
-			{
-				operation: z.enum(["add", "subtract", "multiply", "divide"]),
-				a: z.number(),
-				b: z.number(),
-			},
-			async ({ operation, a, b }) => {
-				let result: number;
-				switch (operation) {
-					case "add":
-						result = a + b;
-						break;
-					case "subtract":
-						result = a - b;
-						break;
-					case "multiply":
-						result = a * b;
-						break;
-					case "divide":
-						if (b === 0)
-							return {
-								content: [
-									{
-										type: "text",
-										text: "Error: Cannot divide by zero",
-									},
-								],
-							};
-						result = a / b;
-						break;
-				}
-				return { content: [{ type: "text", text: String(result) }] };
-			}
-		);
-
-		// Person lookup tool - now uses shared database
+		// Person lookup tool - uses shared database
 		this.server.tool(
 			"lookup_person",
 			{ name: z.string() },
@@ -278,7 +225,7 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 			}
 		);
 
-		// Add person tool - now uses shared database
+		// Add person tool - uses shared database
 		this.server.tool(
 			"add_person",
 			{
@@ -331,7 +278,7 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 			}
 		);
 
-		// List all people tool - now uses shared database
+		// List all people tool - uses shared database
 		this.server.tool(
 			"list_people",
 			{},
@@ -356,120 +303,102 @@ export class MyMCP extends McpAgent<Env, State, {}> {
 						return {
 							content: [
 								{
-									type: "text",
-									text: "No people in the shared database.",
-								},
-							],
-						};
-					}
-
-					const peopleList = data.people
-						.map((p: Person) => `${p.id}. ${p.name} (${p.age}, ${p.gender}) - ${p.jobTitle}`)
-						.join("\n");
-
-					return {
-						content: [
-							{
 								type: "text",
-								text: `👥 **Shared People Database (${data.people.length} people)**\n\n${peopleList}`,
-							},
-						],
-					};
-				} catch (error) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
+								text: "No people in the shared database.",
 							},
 						],
 					};
 				}
+
+				const peopleList = data.people
+					.map((p: Person) => `${p.id}. ${p.name} (${p.age}, ${p.gender}) - ${p.jobTitle}`)
+					.join("\n");
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `👥 **Shared People Database (${data.people.length} people)**\n\n${peopleList}`,
+						},
+					],
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
+						},
+					],
+				};
 			}
-		);
+		}
+	);
 
-		// Database stats tool - shows shared database info
-		this.server.tool(
-			"database_stats",
-			{},
-			async () => {
-				try {
-					const db = this.getSharedDatabase();
-					const response = await db.fetch("http://db/stats");
-					const data = await response.json();
+	// Database stats tool - shows shared database info
+	this.server.tool(
+		"database_stats",
+		{},
+		async () => {
+			try {
+				const db = this.getSharedDatabase();
+				const response = await db.fetch("http://db/stats");
+				const data = await response.json();
 
-					if (!response.ok) {
-						return {
-							content: [
-								{
-									type: "text",
-									text: `Error: ${data.error}`,
-								},
-							],
-						};
-					}
-
+				if (!response.ok) {
 					return {
 						content: [
 							{
 								type: "text",
-								text: `📊 **Shared Database Statistics**
+								text: `Error: ${data.error}`,
+							},
+						],
+					};
+				}
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `📊 **Shared Database Statistics**
 👥 Total People: ${data.totalPeople}
 🕒 Last Updated: ${data.lastUpdated}
 🌍 Global Access: All users see the same data`,
-							},
-						],
-					};
-				} catch (error) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
-							},
-						],
-					};
-				}
-			}
-		);
-
-		// Counter tool - adds to the persistent counter (still per-session)
-		this.server.tool(
-			"count",
-			{ a: z.number() },
-			async ({ a }) => {
-				this.setState({ 
-					...this.state, 
-					counter: this.state.counter + a 
-				});
+						},
+					],
+				};
+			} catch (error) {
 				return {
-					content: [{ 
-						type: "text", 
-						text: `Added ${a}, total is now ${this.state.counter} (Personal Counter)` 
-					}],
+					content: [
+						{
+							type: "text",
+							text: `Error accessing shared database: ${error instanceof Error ? error.message : "Unknown error"}`,
+						},
+					],
 				};
 			}
-		);
-	}
+		}
+	);
+}
 
-	// Handle state updates (now empty since no state)
-	onStateUpdate(state: State) {
-		console.log({ stateUpdate: state });
-	}
+// Handle state updates (now empty since no state)
+onStateUpdate(state: State) {
+	console.log({ stateUpdate: state });
+}
 }
 
 export default {
-	fetch(request: Request, env: Env, ctx: ExecutionContext) {
-		const url = new URL(request.url);
+fetch(request: Request, env: Env, ctx: ExecutionContext) {
+	const url = new URL(request.url);
 
-		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
-			return MyMCP.serveSSE("/sse").fetch(request, env, ctx);
-		}
+	if (url.pathname === "/sse" || url.pathname === "/sse/message") {
+		return MyMCP.serveSSE("/sse").fetch(request, env, ctx);
+	}
 
-		if (url.pathname === "/mcp") {
-			return MyMCP.serve("/mcp").fetch(request, env, ctx);
-		}
+	if (url.pathname === "/mcp") {
+		return MyMCP.serve("/mcp").fetch(request, env, ctx);
+	}
 
-		return new Response("Not found", { status: 404 });
-	},
+	return new Response("Not found", { status: 404 });
+},
 };
