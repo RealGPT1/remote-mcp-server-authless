@@ -1,0 +1,8 @@
+[durable_objects]
+bindings = [
+  { name = "SHARED_PEOPLE_DB", class_name = "SharedPeopleDatabase" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["SharedPeopleDatabase"]
