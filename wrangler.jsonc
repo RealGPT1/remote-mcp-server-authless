@@ -4,20 +4,6 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
-  "migrations": [
-    {
-      "tag": "initial",
-      "new_sqlite_classes": ["SharedPeopleDB"]
-    }
-  ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "SHARED_PEOPLE_DB",
-        "class_name": "SharedPeopleDB"
-      }
-    ]
-  },
   "observability": {
     "enabled": true
   }
